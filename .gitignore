@@ -1,0 +1,40 @@
+# Environment and secrets
+.env
+keys.txt
+
+# Data (generated, user-specific)
+data/
+*.db
+*.db.bak
+
+# Generated output
+openclaw_weekly_*.md
+openclaw_weekly_*_script.txt
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Logs
+cron/logs/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Draft/test outputs
+dry_run_*.md
+*_test_*.md
+test_with_signals.md
+
+# Internal design docs
+ENGINEER-DISPATCH.md
+PLAN.md
+SKILL_METRIC_SCRAPER_SPEC.md
