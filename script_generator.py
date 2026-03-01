@@ -1,12 +1,12 @@
 """
-script_generator.py — LLM Script Generator (v6 — GitHubAwesome Format)
+script_generator.py — LLM Script Generator (v7 — GitHubAwesome Format)
 
-Generates ~20-second YouTube segments for top ClawHub skills.
-Format cloned from GitHubAwesome's GitHub Trending Weekly style:
-  - Hook first (relatable pain / provocateur)
-  - Technical specs only (no popularity metrics)
-  - Dry, confident newscast energy
-  - ~50 words per segment, no transitions
+Generates YouTube segments for top ClawHub skills.
+Format cloned from GitHubAwesome's GitHub Trending Weekly (episodes 24-25):
+  - ONE hook sentence (problem-first / absurdist / provocateur / punchy)
+  - ONE-TWO sentences of what it does with exact technical details
+  - 30-50 words per segment, no transitions, no filler
+  - Dry, slightly sardonic — a knowledgeable friend reporting back
 
 Supports two tracks: MOVERS (established) and ROCKETS (new <30 days).
 Uses Anthropic SDK (claude-haiku-4-5 by default).
@@ -20,29 +20,52 @@ from datetime import datetime, timezone
 
 
 # --- GitHubAwesome-style system prompt ---
-# Key rules: NO popularity metrics, vivid hooks, precise technical specs, dry tone
+# Calibrated from verbatim analysis of GitHubAwesome episodes 24 and 25
 SYSTEM_PROMPT = (
-    "You write 20-second YouTube video segments about AI agent skills for OpenClaw. "
-    "Your tone is dry, confident, and precise — like a tech newsreader, not a hype man. "
+    "You write YouTube video segments about AI agent skills. "
+    "Your tone is dry, precise, and slightly sardonic — a knowledgeable friend "
+    "who has already seen everything, reporting back with deadpan efficiency. "
+    "The wit is in the framing, not in adjectives."
     "\n\n"
-    "STRICT RULES:\n"
-    "- Output PLAIN TEXT ONLY. No markdown, no headers, no bold, no bullet points, no formatting.\n"
-    "- NEVER mention download counts, install counts, star counts, or any popularity metrics.\n"
-    "- NEVER say 'Welcome back', 'check it out', 'game changer', or use filler phrases.\n"
-    "- NEVER use superlatives like 'incredible', 'amazing', 'revolutionary'.\n"
-    "- Lead with a vivid hook: a relatable pain point or a provocative observation.\n"
-    "- Then state what it does in 1-2 precise sentences. Use concrete technical details "
-    "(file formats, response times, specific CLI commands, integrations).\n"
-    "- End with one sharp detail that makes the listener want to try it.\n"
-    "- STRICT LIMIT: 40-55 words maximum. Count carefully. This is a 20-second read.\n"
-    "- The skill name should appear naturally in the copy, not as a title.\n"
-    "- Write as a single flowing paragraph. No line breaks."
+    "FORMAT — exactly this structure, nothing else:\n"
+    "1. ONE hook sentence. Use one of these patterns:\n"
+    "   - Problem-first: a specific scenario the listener recognises\n"
+    "   - Absurdist-specific: a weird real detail that grabs attention\n"
+    "   - Provocateur: a statement that makes the listener lean in\n"
+    "   - Punchy tagline: a short declarative that frames the whole project\n"
+    "2. ONE to TWO sentences of what it does. Name exact technologies, "
+    "CLI commands, file formats, languages, or integrations. "
+    "Describe active behaviour, not capability.\n"
+    "3. STOP. No closer, no call to action, no summary sentence.\n"
+    "\n"
+    "BANNED:\n"
+    "- Markdown, headers, bold, bullets, formatting of any kind\n"
+    "- Download counts, install counts, star counts, popularity metrics\n"
+    "- 'allows you to', 'enables you to', 'lets you' — use active voice instead\n"
+    "- 'check it out', 'game changer', 'Welcome back', 'worth noting'\n"
+    "- Superlatives: 'incredible', 'amazing', 'revolutionary', 'powerful', 'robust'\n"
+    "- Generic problem framing like 'managing X is hard' — be specific\n"
+    "- Transitional phrases, enthusiasm injection, filler of any kind\n"
+    "\n"
+    "HARD LIMIT: 30-50 words. Count them. Single paragraph. No line breaks.\n"
+    "\n"
+    "EXAMPLES of the exact style (from GitHub Trending Weekly):\n"
+    "\n"
+    "\"One thousand job applications in two days. Fully autonomous. "
+    "JobBot fills forms, uploads resumes, and tracks responses across "
+    "LinkedIn, Indeed, and Glassdoor via headless Chromium.\"\n"
+    "\n"
+    "\"A dad got tired of walking past his kid's tablet hearing gaming YouTubers. "
+    "BrainRotGuard is a self-hosted YouTube approval system — sends Telegram "
+    "notifications with Approve and Deny buttons. No YouTube account needed.\"\n"
+    "\n"
+    "\"Surge is a download manager built in Go for the terminal. "
+    "Simultaneous connections, intelligent worker optimisation, three modes: "
+    "interactive TUI, headless server, and CLI client.\""
 )
 
-USER_TEMPLATE_VELOCITY = """ClawHub Skill: {display_name}
-Slug: {slug}
+USER_TEMPLATE_VELOCITY = """Skill: {display_name}
 Author: {author}
-Versions: {versions} | Latest: {latest_version}
 Track: {track}
 
 Summary: {summary}
@@ -50,20 +73,18 @@ Summary: {summary}
 Documentation:
 {content}
 
-Write a single ~20-second segment for this skill in the style described. Hook first, then what it does with precise technical details. No popularity metrics. No intro/outro."""
+Write one segment in the exact style shown. Hook sentence, then what it does. 30-50 words. Stop after that."""
 
-USER_TEMPLATE_COLD = """ClawHub Skill: {display_name}
-Slug: {slug}
+USER_TEMPLATE_COLD = """Skill: {display_name} (brand new)
 Author: {author}
-Versions: {versions} | Latest: {latest_version}
-Track: {track} (brand new skill)
+Track: {track}
 
 Summary: {summary}
 
 Documentation:
 {content}
 
-Write a single ~20-second segment for this brand-new skill. Hook first, then what it does with precise technical details. Emphasise what's novel about it. No popularity metrics. No intro/outro."""
+Write one segment in the exact style shown. Hook sentence, then what it does — emphasise what's novel. 30-50 words. Stop after that."""
 
 
 def _strip_markdown(text: str) -> str:
@@ -85,10 +106,7 @@ def _build_prompt(skill: dict) -> str:
 
     return template.format(
         display_name=skill.get("display_name", "Unknown"),
-        slug=skill.get("slug", ""),
         author=skill.get("author", "Unknown"),
-        versions=skill.get("versions", 0),
-        latest_version=skill.get("latest_version", ""),
         summary=skill.get("summary") or "No description.",
         content=(skill.get("content") or "No documentation available.")[:3000],
         track=track_label,
@@ -114,7 +132,7 @@ def generate_scripts(
         try:
             message = client.messages.create(
                 model=model,
-                max_tokens=200,
+                max_tokens=150,
                 system=SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": _build_prompt(skill)}],
             )

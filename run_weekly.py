@@ -1,7 +1,8 @@
 """
-run_weekly.py — One-command weekly report generation (v4)
+run_weekly.py — One-command weekly report generation (v5)
 
 Runs the full pipeline in order:
+  0. bridge: Copy container DB (has daily snapshot history) to host
   1. x_capture: Scan X/Twitter for OpenClaw signals (append to existing)
   2. discovery: Fetch all skills from ClawHub API
   3. storage: Record snapshot to SQLite time-series DB
@@ -15,13 +16,17 @@ Usage:
     python run_weekly.py --skip-x            # Skip X/Twitter capture
     python run_weekly.py --snapshot-only     # Just snapshot, no scripts
     python run_weekly.py --max-pages 3       # Limit API pages (testing)
+    python run_weekly.py --no-bridge         # Skip container DB copy
 
 For daily cron (snapshot accumulation only):
     python run_weekly.py --snapshot-only --skip-x
 """
 
 import argparse
+import json
 import os
+import shutil
+import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -29,6 +34,55 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
+
+CONTAINER_NAME = "openclaw-gateway-secure"
+CONTAINER_DB = "/home/node/.openclaw/workspace/data/skills-weekly/metrics.db"
+
+
+def _bridge_container_db():
+    """Copy container's metrics.db (with daily snapshot history) to host."""
+    host_db = Path(__file__).parent / "data" / "metrics.db"
+    host_db.parent.mkdir(parents=True, exist_ok=True)
+
+    # Check container health
+    try:
+        result = subprocess.run(
+            ["docker", "ps", "--filter", f"name={CONTAINER_NAME}",
+             "--format", "{{.Status}}"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if "(healthy)" not in result.stdout:
+            print(f"  [WARN] Container {CONTAINER_NAME} not healthy, skipping DB bridge")
+            return False
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        print("  [WARN] Docker not available, skipping DB bridge")
+        return False
+
+    # Backup existing host DB
+    if host_db.exists():
+        backup = host_db.with_suffix(".db.bak")
+        shutil.copy2(host_db, backup)
+        print(f"  Host DB backed up to {backup.name}")
+
+    # Copy container DB to host
+    try:
+        result = subprocess.run(
+            ["docker", "cp", f"{CONTAINER_NAME}:{CONTAINER_DB}", str(host_db)],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode != 0:
+            print(f"  [WARN] docker cp failed: {result.stderr.strip()}")
+            # Restore backup
+            backup = host_db.with_suffix(".db.bak")
+            if backup.exists():
+                shutil.copy2(backup, host_db)
+                print("  Restored backup")
+            return False
+        print(f"  Container DB copied to host ({host_db.stat().st_size // 1024}KB)")
+        return True
+    except subprocess.TimeoutExpired:
+        print("  [WARN] docker cp timed out")
+        return False
 
 
 def main():
@@ -43,6 +97,7 @@ def main():
     parser.add_argument("--snapshot-only", action="store_true")
     parser.add_argument("--skip-x", action="store_true", help="Skip X/Twitter capture")
     parser.add_argument("--mock", action="store_true")
+    parser.add_argument("--no-bridge", action="store_true", help="Skip container DB copy")
     parser.add_argument("--episode", type=int, default=1, help="Episode number for video script")
     args = parser.parse_args()
 
@@ -67,6 +122,13 @@ def main():
         except Exception as e:
             print(f"[WARN] X capture failed (non-fatal): {e}")
             print("       Continuing with existing signals...")
+
+    # Step 0: Bridge container DB (get real daily snapshot history)
+    if not args.no_bridge:
+        print("\n" + "=" * 40)
+        print("  PHASE 0: Container DB Bridge")
+        print("=" * 40)
+        _bridge_container_db()
 
     # Step 2-6: ClawHub pipeline
     print("\n" + "=" * 40)
@@ -145,12 +207,24 @@ def main():
     )
     Path(script_path).write_text(video_script, encoding="utf-8")
 
+    # Output 3: Structured JSON for Remotion video pipeline
+    json_path = output_path.replace(".md", ".json")
+    json_data = {
+        "episode": args.episode,
+        "week_label": week_label,
+        "generated_at": now.isoformat(),
+        "movers": movers_s,
+        "rockets": rockets_s,
+    }
+    Path(json_path).write_text(json.dumps(json_data, indent=2, default=str), encoding="utf-8")
+
     dates = storage.distinct_snapshot_dates()
     total = len(movers_s) + len(rockets_s)
     print(f"\n{'=' * 60}")
     print(f"  DONE:")
     print(f"    Report: {output_path}")
     print(f"    Script: {script_path}")
+    print(f"    JSON:   {json_path}")
     print(f"  {len(movers_s)} movers + {len(rockets_s)} rockets | DB: {storage.snapshot_count()} rows across {len(dates)} date(s)")
     print(f"{'=' * 60}")
 
