@@ -12,12 +12,18 @@ REM Weekly report on Mondays at 9:30 AM
 schtasks /Create /TN "OpenClawWeeklyReport" /TR "%CRONDIR%weekly_report.bat" /SC WEEKLY /D MON /ST 09:30 /F
 if %errorlevel%==0 (echo   [OK] Weekly report task registered) else (echo   [FAIL] Weekly report task)
 
+REM Hourly heartbeat at :30 past each hour (top-500 skills + project metadata)
+schtasks /Create /TN "OpenClawHeartbeat" /TR "%CRONDIR%hourly_heartbeat.bat" /SC HOURLY /MO 1 /ST 00:30 /F
+if %errorlevel%==0 (echo   [OK] Hourly heartbeat task registered) else (echo   [FAIL] Hourly heartbeat task)
+
 echo.
 echo Verifying:
 schtasks /Query /TN "OpenClawDailySnapshot" /FO LIST | findstr "TaskName Status Next"
 schtasks /Query /TN "OpenClawWeeklyReport" /FO LIST | findstr "TaskName Status Next"
+schtasks /Query /TN "OpenClawHeartbeat" /FO LIST | findstr "TaskName Status Next"
 
 echo.
 echo Done. To test manually:
 echo   schtasks /Run /TN "OpenClawDailySnapshot"
 echo   schtasks /Run /TN "OpenClawWeeklyReport"
+echo   schtasks /Run /TN "OpenClawHeartbeat"

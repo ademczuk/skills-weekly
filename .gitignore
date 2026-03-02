@@ -10,6 +10,7 @@ data/
 # Generated output
 openclaw_weekly_*.md
 openclaw_weekly_*_script.txt
+openclaw_weekly_*.json
 
 # Python
 __pycache__/

@@ -21,7 +21,7 @@ File format (data/weekly_signals.json):
 ]
 
 Categories: tutorial, security, ecosystem, showcase, discussion, market
-Sources: x, blog, docs, youtube, reddit
+Sources: x, blog, docs, youtube, reddit, hackernews
 """
 
 import json
@@ -37,6 +37,15 @@ CATEGORY_EMOJI = {
     "showcase": "🎨",
     "discussion": "💬",
     "market": "📈",
+}
+
+SOURCE_ICON = {
+    "x": "𝕏",
+    "reddit": "🔴",
+    "hackernews": "🟠",
+    "blog": "📝",
+    "docs": "📄",
+    "youtube": "▶️",
 }
 
 CATEGORY_LABEL = {
@@ -72,10 +81,23 @@ def render_community_section(signals: list[dict], ttl_days: int = 7) -> str:
     if not signals:
         return ""
 
+    # Count signals by source for subtitle
+    sources = {s.get("source", "x") for s in signals}
+    source_labels = []
+    if "x" in sources:
+        source_labels.append("X")
+    if "reddit" in sources:
+        source_labels.append("Reddit")
+    if "hackernews" in sources:
+        source_labels.append("Hacker News")
+    if "blog" in sources:
+        source_labels.append("blogs")
+    subtitle = ", ".join(source_labels) or "community discussions"
+
     lines = [
         "## Community Buzz This Week",
         "",
-        "*Curated from X, blogs, and community discussions.*",
+        f"*Curated from {subtitle}.*",
         "",
     ]
 
@@ -101,12 +123,15 @@ def render_community_section(signals: list[dict], ttl_days: int = 7) -> str:
             summary = item.get("summary", "")
             item_date = item.get("date", "")
             tags = item.get("tags", [])
+            source = item.get("source", "")
 
             link = f"[{title}]({url})" if url else title
             tag_str = " ".join(f"`#{t}`" for t in tags) if tags else ""
             date_str = f" ({item_date})" if item_date else ""
+            source_icon = SOURCE_ICON.get(source, "")
+            source_prefix = f"{source_icon} " if source_icon else ""
 
-            lines.append(f"- **{link}**{date_str}")
+            lines.append(f"- {source_prefix}**{link}**{date_str}")
             if summary:
                 lines.append(f"  {summary}")
             if tag_str:

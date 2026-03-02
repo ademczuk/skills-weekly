@@ -291,6 +291,115 @@ def get_latest_snapshot() -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def append_snapshot(skills: list[dict]) -> int:
+    """
+    Append-only snapshot insert for hourly heartbeat.
+    No DATE-scoped dedup — each hourly run creates distinct rows.
+    Uses INSERT OR IGNORE with hour-level granularity to prevent
+    accidental duplicate runs within the same hour.
+    """
+    now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
+
+    with _connect() as conn:
+        rows = [
+            (
+                s["slug"], now_iso,
+                s.get("downloads", 0), s.get("stars", 0),
+                s.get("installs_current", 0), s.get("installs_all_time", 0),
+                s.get("versions", 0), s.get("comments", 0),
+            )
+            for s in skills
+        ]
+        conn.executemany(
+            """INSERT INTO metrics_history
+                (slug, timestamp, downloads, stars, installs_current,
+                 installs_all_time, versions, comments)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            rows,
+        )
+    print(f"[STORAGE] Heartbeat appended: {len(rows)} rows at {now_iso[:19]}")
+    return len(rows)
+
+
+def rollup_hourly(retention_days: int = 30) -> int:
+    """
+    Compact hourly data older than retention_days.
+    Keeps only the last row per slug per day for old data.
+    Returns number of rows deleted.
+    """
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).strftime("%Y-%m-%d")
+
+    with _connect() as conn:
+        # Count before
+        before = conn.execute("SELECT COUNT(*) FROM metrics_history").fetchone()[0]
+
+        # Keep only the max(id) per slug per date for rows older than cutoff
+        conn.execute("""
+            DELETE FROM metrics_history
+            WHERE DATE(timestamp) < :cutoff
+              AND id NOT IN (
+                  SELECT MAX(id) FROM metrics_history
+                  WHERE DATE(timestamp) < :cutoff
+                  GROUP BY slug, DATE(timestamp)
+              )
+        """, {"cutoff": cutoff})
+
+        after = conn.execute("SELECT COUNT(*) FROM metrics_history").fetchone()[0]
+        deleted = before - after
+
+    if deleted > 0:
+        print(f"[STORAGE] Rollup: deleted {deleted} hourly rows older than {cutoff}")
+    return deleted
+
+
+def init_project_metadata() -> None:
+    """Create project_metadata table for tracking OpenClaw ecosystem repos."""
+    with _connect() as conn:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS project_metadata (
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                repo                TEXT NOT NULL,
+                timestamp           TEXT NOT NULL,
+                stars               INTEGER DEFAULT 0,
+                forks               INTEGER DEFAULT 0,
+                open_issues         INTEGER DEFAULT 0,
+                open_prs            INTEGER DEFAULT 0,
+                watchers            INTEGER DEFAULT 0,
+                latest_release      TEXT DEFAULT '',
+                latest_release_date TEXT DEFAULT '',
+                weekly_commits      INTEGER DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS idx_project_repo_ts
+                ON project_metadata(repo, timestamp);
+        """)
+
+
+def record_project_metadata(entries: list[dict]) -> int:
+    """Insert project metadata rows."""
+    now_iso = datetime.now(timezone.utc).isoformat()
+    with _connect() as conn:
+        rows = [
+            (
+                e["repo"], now_iso,
+                e.get("stars", 0), e.get("forks", 0),
+                e.get("open_issues", 0), e.get("open_prs", 0),
+                e.get("watchers", 0), e.get("latest_release", ""),
+                e.get("latest_release_date", ""), e.get("weekly_commits", 0),
+            )
+            for e in entries
+        ]
+        conn.executemany(
+            """INSERT INTO project_metadata
+                (repo, timestamp, stars, forks, open_issues, open_prs,
+                 watchers, latest_release, latest_release_date, weekly_commits)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            rows,
+        )
+    print(f"[STORAGE] Project metadata: {len(rows)} repos at {now_iso[:19]}")
+    return len(rows)
+
+
 def snapshot_count() -> int:
     """Return total number of snapshot rows."""
     with _connect() as conn:

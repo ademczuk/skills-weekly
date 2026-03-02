@@ -109,11 +109,13 @@ def main():
     print(f"  {week_label}")
     print("=" * 60)
 
-    # Step 1: X/Twitter capture
+    # Step 1: Multi-source signal capture (X + Reddit + HN)
     if not args.skip_x and not args.snapshot_only:
         print("\n" + "=" * 40)
-        print("  PHASE 1: X/Twitter Signal Capture")
+        print("  PHASE 1: Multi-Source Signal Capture")
         print("=" * 40)
+
+        # X/Twitter
         try:
             import x_capture
             date_from = (now - timedelta(days=args.days)).strftime("%Y-%m-%d")
@@ -121,7 +123,13 @@ def main():
             x_capture.capture(date_from=date_from, date_to=date_to, append=True)
         except Exception as e:
             print(f"[WARN] X capture failed (non-fatal): {e}")
-            print("       Continuing with existing signals...")
+
+        # Reddit + Hacker News
+        try:
+            import reddit_capture
+            reddit_capture.capture(days=args.days)
+        except Exception as e:
+            print(f"[WARN] Reddit/HN capture failed (non-fatal): {e}")
 
     # Step 0: Bridge container DB (get real daily snapshot history)
     if not args.no_bridge:
@@ -129,6 +137,16 @@ def main():
         print("  PHASE 0: Container DB Bridge")
         print("=" * 40)
         _bridge_container_db()
+
+    # Rollup old hourly data (keep last 30 days granular, compact the rest)
+    try:
+        import storage as _storage_rollup
+        _storage_rollup.init_db()
+        rolled = _storage_rollup.rollup_hourly()
+        if rolled > 0:
+            print(f"  [ROLLUP] Compacted {rolled} old hourly rows")
+    except Exception as e:
+        print(f"  [WARN] Rollup failed (non-fatal): {e}")
 
     # Step 2-6: ClawHub pipeline
     print("\n" + "=" * 40)
