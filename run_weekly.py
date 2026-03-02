@@ -98,11 +98,20 @@ def main():
     parser.add_argument("--skip-x", action="store_true", help="Skip X/Twitter capture")
     parser.add_argument("--mock", action="store_true")
     parser.add_argument("--no-bridge", action="store_true", help="Skip container DB copy")
-    parser.add_argument("--episode", type=int, default=1, help="Episode number for video script")
+    parser.add_argument("--episode", type=int, default=0, help="Episode number (0=auto-increment)")
     args = parser.parse_args()
 
     now = datetime.now(timezone.utc)
     week_label = args.week or f"Week of {now.strftime('%b %d, %Y')}"
+
+    # Auto-increment episode number from counter file
+    counter_path = Path(__file__).parent / "data" / "episode_counter.json"
+    if args.episode == 0:
+        try:
+            counter = json.loads(counter_path.read_text(encoding="utf-8"))
+            args.episode = counter.get("episode", 0) + 1
+        except (FileNotFoundError, json.JSONDecodeError):
+            args.episode = 1
 
     print("=" * 60)
     print("  OpenClaw Skills Weekly — Full Pipeline (v4)")
@@ -265,10 +274,17 @@ def main():
     }
     Path(json_path).write_text(json.dumps(json_data, indent=2, default=str), encoding="utf-8")
 
+    # Save episode counter for auto-increment
+    counter_path.parent.mkdir(parents=True, exist_ok=True)
+    counter_path.write_text(
+        json.dumps({"episode": args.episode, "last_generated": now.strftime("%Y-%m-%d")}),
+        encoding="utf-8",
+    )
+
     dates = storage.distinct_snapshot_dates()
     total = len(movers_s) + len(rockets_s)
     print(f"\n{'=' * 60}")
-    print(f"  DONE:")
+    print(f"  DONE (Episode {args.episode}):")
     print(f"    Report: {output_path}")
     print(f"    Script: {script_path}")
     print(f"    JSON:   {json_path}")

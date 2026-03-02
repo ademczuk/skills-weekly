@@ -5,6 +5,7 @@ REM 0. Backup host DB, then copy container DB (has daily snapshot history)
 REM 1. Full host-side pipeline: X capture + discover + snapshot + rank + harvest + scripts
 REM 2. Container snapshot for its own DB accumulation
 REM 3. Sync signals to container so TUI reports include community buzz
+REM 4. Render YouTube video via Remotion (screenshots + TTS + encode)
 
 REM Set PROJECT to parent of cron\ directory (repo root)
 set PROJECT=%~dp0..
@@ -50,7 +51,7 @@ echo. >> "%LOGFILE%" 2>&1
 echo [PHASE 1] Full Pipeline via run_weekly.py (host) >> "%LOGFILE%" 2>&1
 
 cd /d "%PROJECT%"
-python run_weekly.py --top 10 >> "%LOGFILE%" 2>&1
+python run_weekly.py --top 10 --episode 0 >> "%LOGFILE%" 2>&1
 echo [%date% %time%] Host pipeline exit code: %errorlevel% >> "%LOGFILE%" 2>&1
 
 REM --- Phase 2: Container snapshot (keeps container DB up-to-date) ---
@@ -75,6 +76,38 @@ if exist "%PROJECT%\data\weekly_signals.json" (
     docker cp "%PROJECT%\data\weekly_signals.json" openclaw-gateway-secure:/home/node/.openclaw/workspace/data/skills-weekly/weekly_signals.json >> "%LOGFILE%" 2>&1
     docker exec -u root openclaw-gateway-secure chown 1000:1000 /home/node/.openclaw/workspace/data/skills-weekly/weekly_signals.json >> "%LOGFILE%" 2>&1
     echo [%date% %time%] Signals synced to container >> "%LOGFILE%" 2>&1
+)
+
+REM --- Phase 4: Render YouTube video via Remotion ---
+echo. >> "%LOGFILE%" 2>&1
+echo [PHASE 4] Rendering YouTube video >> "%LOGFILE%" 2>&1
+
+set REMOTION_DIR=%PROJECT%\..\CursorfulClone\cursorful-ext\remotion
+
+REM Find the latest scraper JSON
+set LATEST_JSON=
+for /f "delims=" %%F in ('dir /b /o-d "%PROJECT%\openclaw_weekly_*.json" 2^>nul') do (
+    if not defined LATEST_JSON set LATEST_JSON=%PROJECT%\%%F
+)
+
+REM Read episode number from counter
+set EPISODE_NUM=1
+for /f "tokens=2 delims=:," %%a in ('type "%PROJECT%\data\episode_counter.json" 2^>nul ^| findstr "episode"') do (
+    for /f "tokens=* delims= " %%b in ("%%a") do set EPISODE_NUM=%%b
+)
+
+if defined LATEST_JSON (
+    if exist "%REMOTION_DIR%\render-episode.ts" (
+        echo [%date% %time%] Rendering episode %EPISODE_NUM% from %LATEST_JSON% >> "%LOGFILE%" 2>&1
+        cd /d "%REMOTION_DIR%"
+        call npx tsx render-episode.ts --scraper-json "%LATEST_JSON%" --episode %EPISODE_NUM% --fps 30 --crf 18 >> "%LOGFILE%" 2>&1
+        echo [%date% %time%] Video render exit code: %errorlevel% >> "%LOGFILE%" 2>&1
+        cd /d "%PROJECT%"
+    ) else (
+        echo [%date% %time%] SKIP: Remotion not found at %REMOTION_DIR% >> "%LOGFILE%" 2>&1
+    )
+) else (
+    echo [%date% %time%] SKIP: No scraper JSON found >> "%LOGFILE%" 2>&1
 )
 
 echo. >> "%LOGFILE%" 2>&1
