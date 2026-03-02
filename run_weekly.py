@@ -148,6 +148,15 @@ def main():
     except Exception as e:
         print(f"  [WARN] Rollup failed (non-fatal): {e}")
 
+    # OpenClaw project metadata snapshot (GitHub repo tracking)
+    if not args.snapshot_only:
+        try:
+            import project_tracker
+            print("\n  [PROJECT] Capturing OpenClaw ecosystem metadata...")
+            project_tracker.capture()
+        except Exception as e:
+            print(f"  [WARN] Project tracker failed (non-fatal): {e}")
+
     # Step 2-6: ClawHub pipeline
     print("\n" + "=" * 40)
     print("  PHASE 2: ClawHub Data Pipeline")
@@ -211,9 +220,27 @@ def main():
         movers_s = all_scripted[:len(top_movers)]
         rockets_s = all_scripted[len(top_movers):]
 
+    # Time-series enrichment for report + JSON
+    print("\n[6/6] Building time-series data...")
+
+    # Per-skill history (sparkline data for each top skill)
+    for skill in movers_s + rockets_s:
+        slug = skill.get("slug", "")
+        if slug:
+            skill["history"] = storage.get_skill_history(slug, days=args.days)
+
+    # Catalog-level aggregates (total skills, downloads, installs over time)
+    catalog_history = storage.get_catalog_history(days=args.days)
+
+    # OpenClaw project metadata (stars, PRs, releases)
+    project_history = storage.get_project_history(days=args.days)
+
     # Output 1: Markdown report (data-rich, for reference)
     output_path = args.output or f"openclaw_weekly_{now.strftime('%Y%m%d')}.md"
-    markdown = script_generator.render_markdown(movers_s, rockets_s, week_label=week_label)
+    markdown = script_generator.render_markdown(
+        movers_s, rockets_s, week_label=week_label,
+        catalog_history=catalog_history, project_history=project_history,
+    )
     Path(output_path).write_text(markdown, encoding="utf-8")
 
     # Output 2: Voice-ready video script (GitHubAwesome style)
@@ -233,6 +260,8 @@ def main():
         "generated_at": now.isoformat(),
         "movers": movers_s,
         "rockets": rockets_s,
+        "catalog": catalog_history,
+        "openclaw_project": project_history,
     }
     Path(json_path).write_text(json.dumps(json_data, indent=2, default=str), encoding="utf-8")
 

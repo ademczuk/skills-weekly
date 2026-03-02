@@ -400,6 +400,69 @@ def record_project_metadata(entries: list[dict]) -> int:
     return len(rows)
 
 
+def get_skill_history(slug: str, days: int = 30) -> list[dict]:
+    """Return daily time-series for a single skill (one row per day, last N days)."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+    with _connect() as conn:
+        rows = conn.execute("""
+            SELECT DATE(timestamp) as date,
+                   MAX(downloads) as downloads,
+                   MAX(stars) as stars,
+                   MAX(installs_all_time) as installs_all_time,
+                   MAX(installs_current) as installs_current,
+                   MAX(comments) as comments
+            FROM metrics_history
+            WHERE slug = :slug AND DATE(timestamp) >= :cutoff
+            GROUP BY DATE(timestamp)
+            ORDER BY date ASC
+        """, {"slug": slug, "cutoff": cutoff}).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_catalog_history(days: int = 30) -> list[dict]:
+    """Return daily catalog aggregates (total skills, downloads, installs, stars).
+    Uses MAX per slug per day to avoid double-counting from multiple snapshots."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+    with _connect() as conn:
+        rows = conn.execute("""
+            SELECT date,
+                   COUNT(*) as total_skills,
+                   SUM(max_dl) as total_downloads,
+                   SUM(max_iat) as total_installs,
+                   SUM(max_stars) as total_stars
+            FROM (
+                SELECT DATE(timestamp) as date, slug,
+                       MAX(downloads) as max_dl,
+                       MAX(installs_all_time) as max_iat,
+                       MAX(stars) as max_stars
+                FROM metrics_history
+                WHERE DATE(timestamp) >= :cutoff
+                GROUP BY DATE(timestamp), slug
+            )
+            GROUP BY date
+            ORDER BY date ASC
+        """, {"cutoff": cutoff}).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_project_history(days: int = 30) -> list[dict]:
+    """Return project metadata time-series for all tracked repos."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+    with _connect() as conn:
+        rows = conn.execute("""
+            SELECT repo, DATE(timestamp) as date,
+                   MAX(stars) as stars, MAX(forks) as forks,
+                   MAX(open_issues) as open_issues, MAX(open_prs) as open_prs,
+                   MAX(watchers) as watchers, MAX(weekly_commits) as weekly_commits,
+                   MAX(latest_release) as latest_release
+            FROM project_metadata
+            WHERE DATE(timestamp) >= :cutoff
+            GROUP BY repo, DATE(timestamp)
+            ORDER BY repo, date ASC
+        """, {"cutoff": cutoff}).fetchall()
+    return [dict(r) for r in rows]
+
+
 def snapshot_count() -> int:
     """Return total number of snapshot rows."""
     with _connect() as conn:

@@ -152,6 +152,8 @@ def render_markdown(
     movers: list[dict],
     rockets: list[dict] | None = None,
     week_label: str = "",
+    catalog_history: list[dict] | None = None,
+    project_history: list[dict] | None = None,
 ) -> str:
     """Render the final report with MOVERS and ROCKETS sections."""
     rockets = rockets or []
@@ -163,6 +165,49 @@ def render_markdown(
         f"# OpenClaw Skills Weekly{' — ' + week_label if week_label else ''}",
         "",
     ]
+
+    # --- Ecosystem Overview ---
+    if catalog_history or project_history:
+        lines += ["## Ecosystem Pulse", ""]
+
+        if catalog_history and len(catalog_history) >= 1:
+            latest = catalog_history[-1]
+            lines.append(
+                f"**{latest.get('total_skills', 0):,}** skills on ClawHub | "
+                f"**{latest.get('total_downloads', 0):,}** total downloads | "
+                f"**{latest.get('total_installs', 0):,}** total installs | "
+                f"**{latest.get('total_stars', 0):,}** total stars"
+            )
+            if len(catalog_history) >= 2:
+                prev = catalog_history[0]
+                skill_delta = latest.get("total_skills", 0) - prev.get("total_skills", 0)
+                dl_delta = latest.get("total_downloads", 0) - prev.get("total_downloads", 0)
+                install_delta = latest.get("total_installs", 0) - prev.get("total_installs", 0)
+                lines.append("")
+                lines.append(
+                    f"*{len(catalog_history)}-day trend:* "
+                    f"+{skill_delta:,} skills | "
+                    f"+{dl_delta:,} downloads | "
+                    f"+{install_delta:,} installs"
+                )
+            lines.append("")
+
+        if project_history:
+            # Group by repo, show latest snapshot
+            repos: dict[str, dict] = {}
+            for row in project_history:
+                repos[row["repo"]] = row  # last row wins (sorted ASC)
+            for repo, data in repos.items():
+                lines.append(
+                    f"- **{repo}**: {data.get('stars', 0):,} stars, "
+                    f"{data.get('forks', 0):,} forks, "
+                    f"{data.get('open_prs', 0):,} open PRs, "
+                    f"{data.get('weekly_commits', 0)} weekly commits"
+                    f"{', release ' + data['latest_release'] if data.get('latest_release') else ''}"
+                )
+            lines.append("")
+
+        lines += ["---", ""]
 
     # --- MOVERS section ---
     if has_velocity:

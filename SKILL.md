@@ -5,7 +5,7 @@ emoji: "\U0001F4CA"
 user-invocable: true
 metadata:
   openclaw:
-    version: "1.0.0"
+    version: "1.2.0"
     requires:
       bins: ["python3"]
       env: ["ANTHROPIC_API_KEY"]
@@ -80,7 +80,7 @@ Present both file paths to the user when done.
   OpenClaw Skills Weekly — Full Pipeline (v4)
   Week of Mar 01, 2026
 ============================================================
-  PHASE 1: X/Twitter Signal Capture
+  PHASE 1: Multi-Source Signal Capture (X + Reddit + HN)
   PHASE 2: ClawHub Data Pipeline
   [1/5] Discovering ClawHub skills...
   [2/5] Saving snapshot...
@@ -160,7 +160,10 @@ storage.py             # SQLite time-series (slug-scoped dedup, CTE velocity)
 ranker.py              # Two-track: Movers + Rockets, author diversity cap
 harvester.py           # ClawHub detail API content + author extraction
 script_generator.py    # LLM script gen + markdown + video script rendering
-community_signals.py   # X/Twitter signal loading and rendering
+community_signals.py   # Multi-source signal loading and rendering
 x_capture.py           # xAI x_search API integration
+reddit_capture.py      # Reddit + Hacker News signal capture
+hourly_heartbeat.py    # Top-500 hourly snapshot + project metadata
+project_tracker.py     # OpenClaw GitHub repo metadata tracking
 data/metrics.db        # SQLite database (auto-created)
 ```
